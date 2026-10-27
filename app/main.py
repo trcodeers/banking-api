@@ -24,7 +24,6 @@ app = FastAPI(
 
 app.include_router(accounts.router)
 app.include_router(transactions.router)
-app.include_router(accounts.router)
 
 @app.get("/health")
 def health_check():
