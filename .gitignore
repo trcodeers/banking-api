@@ -8,4 +8,4 @@ wheels/
 
 # Virtual environments
 .venv
-banking.db
+/banking.db
