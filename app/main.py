@@ -5,11 +5,11 @@ from fastapi import FastAPI
 
 from app.database import Base, engine
 from app import models
+from app.routes import accounts, transactions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables if they don't exist.
     Base.metadata.create_all(bind=engine)
     yield
 
@@ -20,6 +20,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(accounts.router)
+app.include_router(transactions.router)
 
 
 @app.get("/health")
