@@ -1,6 +1,8 @@
 
+from decimal import Decimal
+
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,38 +22,32 @@ def create_transaction(
             if account is None:
                 raise HTTPException(404, "Account not found")
 
-            existing = db.scalar(
+            duplicate = db.scalar(
                 select(Transaction.id).where(
                     Transaction.account_id == account_id,
                     Transaction.reference_id == payload.reference_id,
                 )
             )
-            if existing is not None:
+            if duplicate is not None:
                 raise HTTPException(409, "Duplicate transaction reference_id")
 
-            # Conditional debit prevents the balance from going negative.
+            amount = payload.amount.quantize(Decimal("0.01"))
+
             if payload.type == "debit":
-                result = db.execute(
-                    update(Account)
-                    .where(
-                        Account.id == account_id,
-                        Account.balance >= payload.amount,
-                    )
-                    .values(balance=Account.balance - payload.amount)
-                )
-                if result.rowcount != 1:
+                if account.balance < amount:
                     raise HTTPException(400, "Insufficient balance")
+                account.balance = (account.balance - amount).quantize(
+                    Decimal("0.01")
+                )
             else:
-                db.execute(
-                    update(Account)
-                    .where(Account.id == account_id)
-                    .values(balance=Account.balance + payload.amount)
+                account.balance = (account.balance + amount).quantize(
+                    Decimal("0.01")
                 )
 
             transaction = Transaction(
                 account_id=account_id,
                 type=payload.type,
-                amount=payload.amount,
+                amount=amount,
                 reference_id=payload.reference_id,
             )
             db.add(transaction)
@@ -72,7 +68,7 @@ def create_transaction(
 def transfer_money(db: Session, payload: TransferCreate) -> dict:
     source_id = payload.source_account_id
     destination_id = payload.destination_account_id
-    amount = payload.amount
+    amount = payload.amount.quantize(Decimal("0.01"))
 
     try:
         with db.begin():
@@ -93,22 +89,14 @@ def transfer_money(db: Session, payload: TransferCreate) -> dict:
             if duplicate is not None:
                 raise HTTPException(409, "Duplicate transfer reference_id")
 
-            # Debit and credit occur within the same database transaction.
-            result = db.execute(
-                update(Account)
-                .where(
-                    Account.id == source_id,
-                    Account.balance >= amount,
-                )
-                .values(balance=Account.balance - amount)
-            )
-            if result.rowcount != 1:
+            if source.balance < amount:
                 raise HTTPException(400, "Insufficient balance")
 
-            db.execute(
-                update(Account)
-                .where(Account.id == destination_id)
-                .values(balance=Account.balance + amount)
+            source.balance = (source.balance - amount).quantize(
+                Decimal("0.01")
+            )
+            destination.balance = (destination.balance + amount).quantize(
+                Decimal("0.01")
             )
 
             db.add_all([
@@ -127,19 +115,13 @@ def transfer_money(db: Session, payload: TransferCreate) -> dict:
             ])
             db.flush()
 
-            # Capture the final balances before committing.
-            source_balance = db.scalar(
-                select(Account.balance).where(Account.id == source_id)
-            )
-            destination_balance = db.scalar(
-                select(Account.balance).where(Account.id == destination_id)
-            )
+            result = {
+                "message": "Transfer successful",
+                "source_balance": source.balance,
+                "destination_balance": destination.balance,
+            }
 
-        return {
-            "message": "Transfer successful",
-            "source_balance": source_balance,
-            "destination_balance": destination_balance,
-        }
+        return result
 
     except HTTPException:
         raise

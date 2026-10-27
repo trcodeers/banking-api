@@ -1,5 +1,6 @@
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
 )
@@ -20,7 +22,9 @@ class Account(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    balance: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
 
     __table_args__ = (
         CheckConstraint("balance >= 0", name="ck_account_balance_nonnegative"),
@@ -32,12 +36,10 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.id"),
-        nullable=False,
-        index=True,
+        ForeignKey("accounts.id"), nullable=False, index=True
     )
     type: Mapped[str] = mapped_column(String(10), nullable=False)
-    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     reference_id: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -47,8 +49,7 @@ class Transaction(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('credit', 'debit')",
-            name="ck_transaction_type",
+            "type IN ('credit', 'debit')", name="ck_transaction_type"
         ),
         CheckConstraint("amount > 0", name="ck_transaction_amount_positive"),
         UniqueConstraint(
